@@ -30,19 +30,13 @@ export async function me() {
   return data
 }
 
-export async function departments() {
-  const { data } = await api.get('/departments')
-  return data
-}
-
 export async function adminDocuments() {
   const { data } = await api.get('/admin/documents')
   return data
 }
 
-export async function uploadDocument(departmentId, file) {
+export async function uploadDocument(file) {
   const form = new FormData()
-  form.append('department_id', String(departmentId))
   form.append('file', file)
   const { data } = await api.post('/admin/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -51,10 +45,8 @@ export async function uploadDocument(departmentId, file) {
   return data
 }
 
-/** Upload many files in one request; each is ingested into the same department. */
-export async function uploadDocumentBatch(departmentId, fileList) {
+export async function uploadDocumentBatch(fileList) {
   const form = new FormData()
-  form.append('department_id', String(departmentId))
   for (const f of fileList) {
     form.append('files', f)
   }
@@ -65,11 +57,8 @@ export async function uploadDocumentBatch(departmentId, fileList) {
   return data
 }
 
-export async function ingestUrl(departmentId, url) {
-  const { data } = await api.post('/admin/ingest-url', {
-    department_id: departmentId,
-    url,
-  })
+export async function ingestUrl(url) {
+  const { data } = await api.post('/admin/ingest-url', { url })
   return data
 }
 
@@ -77,30 +66,7 @@ export async function deleteDocument(id) {
   await api.delete(`/admin/documents/${id}`)
 }
 
-export async function chat(message, departmentId) {
-  const { data } = await api.post('/chat', {
-    message,
-    department_id: departmentId,
-  })
-  return data
-}
-
-/**
- * Multimodal chat: Groq vision for images / video frames, Whisper for audio.
- * @param {{ message?: string, departmentId?: number | null, image?: File | null, audio?: File | null, video?: File | null }} opts
- */
-export async function chatWithMedia(opts) {
-  const form = new FormData()
-  if (opts.message) form.append('message', opts.message)
-  if (opts.departmentId != null && opts.departmentId !== '') {
-    form.append('department_id', String(opts.departmentId))
-  }
-  if (opts.image) form.append('image', opts.image)
-  if (opts.audio) form.append('audio', opts.audio)
-  if (opts.video) form.append('video', opts.video)
-  const { data } = await api.post('/chat/with-media', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 0,
-  })
+export async function chat(message) {
+  const { data } = await api.post('/chat', { message })
   return data
 }

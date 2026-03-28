@@ -22,14 +22,6 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class DepartmentOut(BaseModel):
-    id: int
-    name: str
-    slug: str
-
-    model_config = {"from_attributes": True}
-
-
 class DocumentStatusEnum(str, Enum):
     pending = "pending"
     processing = "processing"
@@ -39,7 +31,6 @@ class DocumentStatusEnum(str, Enum):
 
 class DocumentOut(BaseModel):
     id: int
-    department_id: int
     filename: str
     mime_type: str | None
     source_type: str
@@ -52,7 +43,6 @@ class DocumentOut(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
-    department_id: int | None = None
 
 
 class ChatResponse(BaseModel):
@@ -62,4 +52,3 @@ class ChatResponse(BaseModel):
 
 class UrlIngestRequest(BaseModel):
     url: str = Field(min_length=4, max_length=2048)
-    department_id: int

@@ -8,22 +8,15 @@ from app.config import get_settings
 from app.database import async_session_maker, init_db
 from app.models import Department, User, UserRole
 from app.auth import hash_password
-from app.routers import admin, auth, chat, departments
+from app.routers import admin, auth, chat
 from app.rag.sparse_store import get_sparse_store
 
 
 async def seed() -> None:
     async with async_session_maker() as db:
-        for name, slug in [
-            ("Human Resources", "hr"),
-            ("Marketing", "marketing"),
-            ("Technology", "tech"),
-            ("Operations", "operations"),
-            ("Legal", "legal"),
-        ]:
-            r = await db.execute(select(Department).where(Department.slug == slug))
-            if r.scalar_one_or_none() is None:
-                db.add(Department(name=name, slug=slug))
+        r = await db.execute(select(Department).where(Department.slug == "general"))
+        if r.scalar_one_or_none() is None:
+            db.add(Department(name="General", slug="general"))
         r = await db.execute(select(User).where(User.email == "admin@gmail.com"))
         if r.scalar_one_or_none() is None:
             db.add(
@@ -59,7 +52,6 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api")
-app.include_router(departments.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 

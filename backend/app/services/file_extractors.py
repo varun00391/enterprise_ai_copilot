@@ -1,4 +1,4 @@
-"""Extract plain text from supported file types and URLs."""
+"""Extract plain text from supported file types and URLs (documents only — no image/audio/video ingest)."""
 
 from __future__ import annotations
 
@@ -15,16 +15,53 @@ from openpyxl import load_workbook
 from pptx import Presentation
 from pypdf import PdfReader
 
-from app.services.groq_media import (
-    groq_extract_audio,
-    groq_extract_video,
-    groq_vision_describe_image,
-)
-
 
 def _clean(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+# Not ingested into RAG (use PDF, Office, text, URLs instead).
+INGEST_BLOCKED_SUFFIXES: frozenset[str] = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".tif",
+        ".tiff",
+        ".heic",
+        ".heif",
+        ".mp3",
+        ".wav",
+        ".m4a",
+        ".flac",
+        ".ogg",
+        ".opus",
+        ".aac",
+        ".mp4",
+        ".mov",
+        ".webm",
+        ".mkv",
+        ".avi",
+        ".mpeg",
+        ".mpg",
+    }
+)
+
+
+def ingest_blocked_reason(suffix: str) -> str | None:
+    s = suffix.lower()
+    if not s.startswith("."):
+        s = f".{s}" if s else ""
+    if s in INGEST_BLOCKED_SUFFIXES:
+        return (
+            "Image, audio, and video files are not ingested. "
+            "Use PDF, Word, Excel, PowerPoint, plain text, CSV, or a URL."
+        )
+    return None
 
 
 def extract_from_txt(path: Path) -> str:
@@ -66,21 +103,6 @@ def extract_from_pptx(path: Path) -> str:
     return _clean("\n".join(parts))
 
 
-def extract_from_image(path: Path) -> str:
-    """Use Groq vision (no Tesseract)."""
-    return groq_vision_describe_image(path)
-
-
-def extract_from_audio(path: Path) -> str:
-    """Groq Whisper (hosted); not local Whisper."""
-    return groq_extract_audio(path)
-
-
-def extract_from_video(path: Path) -> str:
-    """Groq Whisper on audio track + Groq vision on sampled frames."""
-    return groq_extract_video(path)
-
-
 def extract_from_url(url: str, timeout: float = 25.0) -> str:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -109,26 +131,14 @@ EXTENSION_HANDLERS: dict[str, Callable[[Path], str]] = {
     ".xls": extract_from_xlsx,
     ".pptx": extract_from_pptx,
     ".ppt": extract_from_pptx,
-    ".png": extract_from_image,
-    ".jpg": extract_from_image,
-    ".jpeg": extract_from_image,
-    ".gif": extract_from_image,
-    ".webp": extract_from_image,
-    ".tif": extract_from_image,
-    ".tiff": extract_from_image,
-    ".bmp": extract_from_image,
-    ".mp3": extract_from_audio,
-    ".wav": extract_from_audio,
-    ".m4a": extract_from_audio,
-    ".mp4": extract_from_video,
-    ".mov": extract_from_video,
-    ".webm": extract_from_video,
-    ".mkv": extract_from_video,
 }
 
 
 def extract_text(path: Path, mime: str | None = None) -> str:
     ext = path.suffix.lower()
+    block = ingest_blocked_reason(ext)
+    if block:
+        raise ValueError(block)
     if ext in EXTENSION_HANDLERS:
         return EXTENSION_HANDLERS[ext](path)
     if mime:
@@ -141,12 +151,11 @@ def extract_text(path: Path, mime: str | None = None) -> str:
             return extract_from_xlsx(path)
         if "presentation" in m or "powerpoint" in m:
             return extract_from_pptx(path)
-        if m.startswith("image/"):
-            return extract_from_image(path)
-        if m.startswith("audio/"):
-            return extract_from_audio(path)
-        if m.startswith("video/"):
-            return extract_from_video(path)
+        if m.startswith("image/") or m.startswith("audio/") or m.startswith("video/"):
+            raise ValueError(
+                "Image, audio, and video MIME types are not ingested. "
+                "Use document formats (PDF, Office, text) or a URL."
+            )
         if m.startswith("text/"):
             return extract_from_txt(path)
     raise ValueError(f"Unsupported file type: {ext or mime}")

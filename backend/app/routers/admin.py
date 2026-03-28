@@ -15,9 +15,21 @@ from app.rag.dense_store import get_dense_store
 from app.rag.ingest import ingest_file_document, ingest_text_for_document, remove_document_files
 from app.rag.sparse_store import get_sparse_store
 from app.schemas import DocumentOut, UrlIngestRequest
-from app.services.file_extractors import extract_from_url
+from app.services.file_extractors import extract_from_url, ingest_blocked_reason
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+async def _default_department_id(db: AsyncSession) -> int:
+    result = await db.execute(select(Department).where(Department.slug == "general").limit(1))
+    row = result.scalar_one_or_none()
+    if row is not None:
+        return row.id
+    d = Department(name="General", slug="general")
+    db.add(d)
+    await db.commit()
+    await db.refresh(d)
+    return d.id
 
 
 @router.get("/documents", response_model=list[DocumentOut])
@@ -33,16 +45,12 @@ async def list_documents(
 async def upload_batch(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
-    department_id: Annotated[int, Form()],
     files: Annotated[list[UploadFile], File()],
 ) -> list[Document]:
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files provided")
     settings = get_settings()
-    res = await db.execute(select(Department).where(Department.id == department_id))
-    dept = res.scalar_one_or_none()
-    if dept is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+    department_id = await _default_department_id(db)
 
     out: list[Document] = []
     dept_dir = settings.upload_dir / str(department_id)
@@ -50,8 +58,24 @@ async def upload_batch(
 
     for file in files:
         safe_name = file.filename or "upload"
-        dest = dept_dir / f"{uuid4().hex}_{safe_name}"
+        ext = Path(safe_name).suffix
+        blocked = ingest_blocked_reason(ext)
         content = await file.read()
+        if blocked:
+            doc = Document(
+                department_id=department_id,
+                filename=safe_name,
+                stored_path="",
+                mime_type=file.content_type,
+                source_type="file",
+                status=DocumentStatus.failed,
+                error_message=blocked,
+            )
+            db.add(doc)
+            await db.commit()
+            await db.refresh(doc)
+            out.append(doc)
+            continue
         if len(content) > 50 * 1024 * 1024:
             doc = Document(
                 department_id=department_id,
@@ -67,6 +91,7 @@ async def upload_batch(
             await db.refresh(doc)
             out.append(doc)
             continue
+        dest = dept_dir / f"{uuid4().hex}_{safe_name}"
         dest.write_bytes(content)
         doc = Document(
             department_id=department_id,
@@ -89,16 +114,15 @@ async def upload_batch(
 async def upload(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
-    department_id: Annotated[int, Form()],
     file: Annotated[UploadFile, File()],
 ) -> Document:
     settings = get_settings()
-    res = await db.execute(select(Department).where(Department.id == department_id))
-    dept = res.scalar_one_or_none()
-    if dept is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
-
+    department_id = await _default_department_id(db)
     safe_name = file.filename or "upload"
+    blocked = ingest_blocked_reason(Path(safe_name).suffix)
+    if blocked:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=blocked)
+
     dept_dir = settings.upload_dir / str(department_id)
     dept_dir.mkdir(parents=True, exist_ok=True)
     dest = dept_dir / f"{uuid4().hex}_{safe_name}"
@@ -131,10 +155,7 @@ async def ingest_url(
     _: Annotated[User, Depends(require_admin)],
 ) -> Document:
     settings = get_settings()
-    res = await db.execute(select(Department).where(Department.id == body.department_id))
-    dept = res.scalar_one_or_none()
-    if dept is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+    department_id = await _default_department_id(db)
 
     try:
         text = extract_from_url(body.url)
@@ -142,13 +163,13 @@ async def ingest_url(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
     name = f"url_{uuid4().hex[:10]}.txt"
-    dept_dir = settings.upload_dir / str(body.department_id) / "urls"
+    dept_dir = settings.upload_dir / str(department_id) / "urls"
     dept_dir.mkdir(parents=True, exist_ok=True)
     dest = dept_dir / name
     dest.write_text(text, encoding="utf-8")
 
     doc = Document(
-        department_id=body.department_id,
+        department_id=department_id,
         filename=body.url[:200],
         stored_path=str(dest),
         mime_type="text/plain",

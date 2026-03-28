@@ -8,9 +8,13 @@ from app.config import get_settings
 
 
 SYSTEM = (
-    "You are an enterprise assistant. Answer using ONLY the provided context snippets. "
-    "If the answer is not in the context, say you do not have that information. "
-    "Be concise and cite document names when helpful."
+    "You are an enterprise assistant. Use both of the following when answering:\n"
+    "1) The user's message — it may include text produced by vision models (attached images), "
+    "Whisper transcription (attached audio), or video (transcript + frame descriptions). "
+    "If the user asks about what is in an attachment, answer from that attachment text.\n"
+    "2) Retrieved knowledge-base snippets from the company corpus — use them for policy, HR, docs, etc.\n"
+    "If neither the user message nor the knowledge base supports an answer, say you do not have that information. "
+    "Be concise; cite snippet labels when helpful."
 )
 
 
@@ -19,10 +23,13 @@ async def generate_answer(query: str, contexts: list[dict]) -> str:
     ctx_blocks = []
     for i, c in enumerate(contexts, 1):
         name = c.get("filename", "document")
-        ctx_blocks.append(f"[{i}] ({name})\n{c.get('text', '')}")
-    context_str = "\n\n".join(ctx_blocks) if ctx_blocks else "(no relevant context retrieved)"
+        ctx_blocks.append(f"[KB {i}] ({name})\n{c.get('text', '')}")
+    context_str = "\n\n".join(ctx_blocks) if ctx_blocks else "(no matching documents retrieved)"
 
-    user_msg = f"Question: {query}\n\nContext:\n{context_str}"
+    user_msg = (
+        f"User message (includes any attachment-derived vision / transcript / video text):\n{query}\n\n"
+        f"Retrieved knowledge-base snippets:\n{context_str}"
+    )
 
     if settings.groq_api_key:
         return await _groq_chat(user_msg)

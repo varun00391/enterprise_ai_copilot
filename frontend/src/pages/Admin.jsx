@@ -6,8 +6,6 @@ import MeshBackground from '../components/MeshBackground'
 
 export default function Admin() {
   const { logout, user } = useAuth()
-  const [departments, setDepartments] = useState([])
-  const [deptId, setDeptId] = useState('')
   const [documents, setDocuments] = useState([])
   const [url, setUrl] = useState('')
   const [batchFiles, setBatchFiles] = useState([])
@@ -17,10 +15,8 @@ export default function Admin() {
   const [drag, setDrag] = useState(false)
 
   const load = useCallback(async () => {
-    const [deps, docs] = await Promise.all([api.departments(), api.adminDocuments()])
-    setDepartments(deps)
+    const docs = await api.adminDocuments()
     setDocuments(docs)
-    setDeptId((prev) => prev || (deps[0] ? String(deps[0].id) : ''))
   }, [])
 
   useEffect(() => {
@@ -53,15 +49,15 @@ export default function Admin() {
 
   async function onBatchUpload(e) {
     e.preventDefault()
-    if (!batchFiles.length || !deptId || uploading) return
+    if (!batchFiles.length || uploading) return
     setMsg('')
     setUploading(true)
     const n = batchFiles.length
     try {
-      await api.uploadDocumentBatch(Number(deptId), batchFiles)
+      await api.uploadDocumentBatch(batchFiles)
       setBatchFiles([])
       await load()
-      setMsg(`Ingested ${n} file(s). Users can query them anytime (all depts or filtered).`)
+      setMsg(`Ingested ${n} file(s) into the knowledge base.`)
     } catch (err) {
       setMsg(err?.response?.data?.detail || 'Batch upload failed')
     } finally {
@@ -71,10 +67,10 @@ export default function Admin() {
 
   async function onUrl(e) {
     e.preventDefault()
-    if (!url.trim() || !deptId) return
+    if (!url.trim()) return
     setMsg('')
     try {
-      await api.ingestUrl(Number(deptId), url.trim())
+      await api.ingestUrl(url.trim())
       setUrl('')
       await load()
       setMsg('URL ingested.')
@@ -109,9 +105,7 @@ export default function Admin() {
         <header className="border-b border-white/[0.06] px-6 py-5">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.2em] text-amber-200/70">
-                Admin
-              </p>
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-amber-200/70">Admin</p>
               <p className="mt-1 text-sm font-medium text-zinc-200">{user?.email}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -134,33 +128,15 @@ export default function Admin() {
             Knowledge ingest
           </h1>
           <p className="mt-3 max-w-2xl text-zinc-500">
-            Upload every file in one batch for a department. Everything is indexed together—users chat against the full
-            corpus with optional department filters.
+            Upload many files at once or add a URL. Supported: PDF, Word, Excel, PowerPoint, plain text, CSV, Markdown.
+            <span className="text-zinc-600"> Image, audio, and video are not ingested.</span>
           </p>
 
           <div className="mt-12 grid gap-8 lg:grid-cols-2">
             <section className="glass-panel rounded-3xl p-8">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-200/80">
-                Batch files
-              </h2>
-              <p className="mt-2 text-xs text-zinc-500">
-                PDF, Office, images (vision), audio (Whisper), video (Whisper + frames). Max 50MB per file.
-              </p>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-200/80">Batch files</h2>
+              <p className="mt-2 text-xs text-zinc-500">Max 50MB per file. Everything feeds one RAG index.</p>
               <form onSubmit={onBatchUpload} className="mt-6 space-y-5">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-zinc-500">Department</label>
-                  <select
-                    value={deptId}
-                    onChange={(e) => setDeptId(e.target.value)}
-                    className="select-elegant w-full py-3"
-                  >
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
                 <div
                   role="button"
                   tabIndex={0}
@@ -180,13 +156,14 @@ export default function Admin() {
                   <input
                     type="file"
                     multiple
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md"
                     onChange={onPickFiles}
                     className="hidden"
                     id="batch-files"
                   />
                   <label htmlFor="batch-files" className="cursor-pointer text-sm text-zinc-400">
                     <span className="font-medium text-amber-200/90">Choose files</span>
-                    <span className="text-zinc-600"> or drag and drop here</span>
+                    <span className="text-zinc-600"> or drag and drop</span>
                   </label>
                   {batchFiles.length > 0 && (
                     <ul className="mt-4 max-h-32 space-y-1 overflow-y-auto text-left text-xs text-zinc-500">
@@ -210,22 +187,8 @@ export default function Admin() {
 
             <section className="glass-panel rounded-3xl p-8">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-200/80">Website</h2>
-              <p className="mt-2 text-xs text-zinc-500">Pull clean text from a public URL into the same department.</p>
+              <p className="mt-2 text-xs text-zinc-500">Extract text from a public page into the same index.</p>
               <form onSubmit={onUrl} className="mt-6 space-y-5">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-zinc-500">Department</label>
-                  <select
-                    value={deptId}
-                    onChange={(e) => setDeptId(e.target.value)}
-                    className="select-elegant w-full py-3"
-                  >
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
                 <input
                   type="url"
                   placeholder="https://…"
@@ -263,7 +226,7 @@ export default function Admin() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-zinc-200">{doc.filename}</p>
                     <p className="mt-0.5 text-xs text-zinc-600">
-                      {doc.status} · dept {doc.department_id} · {doc.source_type}
+                      {doc.status} · {doc.source_type}
                     </p>
                     {doc.error_message && <p className="mt-1 text-xs text-red-400">{doc.error_message}</p>}
                   </div>
