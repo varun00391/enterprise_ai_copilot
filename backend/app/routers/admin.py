@@ -29,6 +29,62 @@ async def list_documents(
     return list(result.scalars().all())
 
 
+@router.post("/upload-batch", response_model=list[DocumentOut])
+async def upload_batch(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+    department_id: Annotated[int, Form()],
+    files: Annotated[list[UploadFile], File()],
+) -> list[Document]:
+    if not files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files provided")
+    settings = get_settings()
+    res = await db.execute(select(Department).where(Department.id == department_id))
+    dept = res.scalar_one_or_none()
+    if dept is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+    out: list[Document] = []
+    dept_dir = settings.upload_dir / str(department_id)
+    dept_dir.mkdir(parents=True, exist_ok=True)
+
+    for file in files:
+        safe_name = file.filename or "upload"
+        dest = dept_dir / f"{uuid4().hex}_{safe_name}"
+        content = await file.read()
+        if len(content) > 50 * 1024 * 1024:
+            doc = Document(
+                department_id=department_id,
+                filename=safe_name,
+                stored_path="",
+                mime_type=file.content_type,
+                source_type="file",
+                status=DocumentStatus.failed,
+                error_message="Max 50MB per file",
+            )
+            db.add(doc)
+            await db.commit()
+            await db.refresh(doc)
+            out.append(doc)
+            continue
+        dest.write_bytes(content)
+        doc = Document(
+            department_id=department_id,
+            filename=safe_name,
+            stored_path=str(dest),
+            mime_type=file.content_type,
+            source_type="file",
+            status=DocumentStatus.pending,
+        )
+        db.add(doc)
+        await db.commit()
+        await db.refresh(doc)
+        await ingest_file_document(db, doc, dest, file.content_type)
+        await db.refresh(doc)
+        out.append(doc)
+    return out
+
+
 @router.post("/upload", response_model=DocumentOut)
 async def upload(
     db: Annotated[AsyncSession, Depends(get_db)],

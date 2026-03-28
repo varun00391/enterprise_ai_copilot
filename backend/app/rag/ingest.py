@@ -144,6 +144,8 @@ async def ingest_text_for_document(
 
 
 async def remove_document_files(path_str: str) -> None:
+    if not path_str or not path_str.strip():
+        return
     p = Path(path_str)
     if p.exists():
         if p.is_dir():

@@ -4,8 +4,8 @@ Internal RAG assistant: admins upload department-scoped company data; signed-in 
 
 ## Features
 
-- **Admin panel**: upload files (text, PDF, DOCX, Excel, PPTX, **images via Groq vision**, **audio via Groq Whisper**, **video via Whisper + vision on sampled frames**), ingest **websites** by URL, list and delete documents, assign content to departments (HR, Marketing, Tech, Operations, Legal by default).
-- **User panel**: chat with optional department filter or search across all departments.
+- **Admin panel**: **batch upload** (many files at once per department), single-file upload still available, URL ingest, document library. Media uses **Groq vision** (images / video frames) and **Groq Whisper** (audio / video soundtrack).
+- **User panel**: chat across **all ingested documents** anytime (optional department filter). Attach **image** (vision), **audio** (mic → record, then Whisper transcribe; or audio file), or **video** (Whisper + frame vision); text + attachments are merged into one grounded answer.
 - **Hybrid RAG**: vector search (sentence-transformers + Chroma) plus BM25; results fused with **reciprocal rank fusion (RRF)** before answering.
 - **Auth**: JWT; default admin `admin@gmail.com` / `admin123`; users can register and sign in.
 
